@@ -2,6 +2,7 @@
 /**
  * API CHAT - Envoi de message et sauvegarde DB
  * POST - Envoyer un message et recevoir la réponse de l'assistant
+ * 🆕 AVEC ANALYSE ÉMOTIONNELLE AUTOMATIQUE
  */
 
 // Headers CORS et JSON
@@ -155,11 +156,51 @@ try {
     // SAUVEGARDE EN BASE DE DONNÉES
     // ========================================
     
+    $db = getDB();
+    
     // Sauvegarder le message user
-    saveMessage($conversationId, 'user', $message);
+    $userMessageId = saveMessage($conversationId, 'user', $message);
     
     // Sauvegarder la réponse assistant
     saveMessage($conversationId, 'assistant', $assistantMessage);
+    
+    // ========================================
+    // 🆕 ANALYSE ÉMOTIONNELLE AUTOMATIQUE
+    // ========================================
+    
+    // Déclencher l'analyse en arrière-plan (non-bloquant)
+    try {
+        $analysisPayload = json_encode([
+            'message_id' => $userMessageId,
+            'conversation_id' => $conversationId,
+            'message_content' => $message
+        ]);
+        
+        // Déterminer l'URL de base (localhost ou production)
+        $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'];
+        $baseUrl = "$protocol://$host";
+        
+        // Appel asynchrone à l'API d'analyse
+        $ch = curl_init("$baseUrl/api/admin/emotions-analysis.php");
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $analysisPayload,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT_MS => 100, // Timeout court pour ne pas bloquer
+            CURLOPT_NOSIGNAL => 1 // Évite les problèmes de timeout
+        ]);
+        
+        curl_exec($ch);
+        
+        // Ne pas vérifier les erreurs pour ne pas bloquer la réponse
+        curl_close($ch);
+        
+    } catch (Exception $e) {
+        // Logger l'erreur mais ne pas bloquer
+        error_log("Erreur analyse émotions: " . $e->getMessage());
+    }
     
     // ========================================
     // RÉPONSE AU CLIENT
