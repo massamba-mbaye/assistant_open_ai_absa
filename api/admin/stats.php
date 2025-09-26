@@ -16,12 +16,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Charger les fonctions DB et auth
-require_once __DIR__ . '/../../config/database.php';
-require_once __DIR__ . '/auth.php';
+// Démarrer la session AVANT de charger database.php
+session_start();
 
-// Vérifier l'authentification admin
-$admin = requireAdminAuth();
+// Charger les fonctions DB
+require_once __DIR__ . '/../../config/database.php';
+
+// ========================================
+// VÉRIFICATION AUTHENTIFICATION (sans passer par auth.php)
+// ========================================
+
+// Vérifier si admin connecté
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
+    jsonResponse([
+        'error' => 'Non authentifié. Veuillez vous connecter.',
+        'redirect' => '/admin/index.php'
+    ], 401);
+}
+
+// Vérifier expiration session (2 heures)
+if (!isset($_SESSION['login_time']) || (time() - $_SESSION['login_time']) > 7200) {
+    session_unset();
+    session_destroy();
+    
+    jsonResponse([
+        'error' => 'Session expirée. Veuillez vous reconnecter.',
+        'redirect' => '/admin/index.php'
+    ], 401);
+}
+
+$admin = [
+    'id' => $_SESSION['admin_id'],
+    'username' => $_SESSION['admin_username'],
+    'email' => $_SESSION['admin_email'],
+    'name' => $_SESSION['admin_name']
+];
 
 // ========================================
 // RÉCUPÉRATION DES STATISTIQUES
@@ -96,7 +125,7 @@ try {
         SELECT 
             sentiment,
             COUNT(*) as count,
-            ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM emotion_analysis WHERE DATE(analyzed_at) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)), 1) as percentage
+            ROUND(COUNT(*) * 100.0 / NULLIF((SELECT COUNT(*) FROM emotion_analysis WHERE DATE(analyzed_at) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)), 0), 1) as percentage
         FROM emotion_analysis
         WHERE DATE(analyzed_at) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
         GROUP BY sentiment

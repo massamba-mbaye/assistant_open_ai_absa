@@ -1,16 +1,72 @@
 <?php
 /**
  * API GESTION CONVERSATIONS
- * GET - Liste des conversations avec filtres
- * GET (avec conversation_id) - Détails d'une conversation avec messages
- * DELETE - Supprimer une conversation
  */
+
+// Désactiver l'affichage des erreurs en HTML
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
 
 // Headers CORS et JSON
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
+
+// Gérer les requêtes OPTIONS (preflight)
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
+
+// Démarrer la session
+session_start();
+
+// Charger les fonctions DB
+require_once __DIR__ . '/../../config/database.php';
+
+// Vérification auth
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
+    jsonResponse(['error' => 'Non authentifié'], 401);
+}
+
+if (!isset($_SESSION['login_time']) || (time() - $_SESSION['login_time']) > 7200) {
+    session_unset();
+    session_destroy();
+    jsonResponse(['error' => 'Session expirée'], 401);
+}
+
+// ========================================
+// ROUTER
+// ========================================
+
+$method = $_SERVER['REQUEST_METHOD'];
+
+try {
+    switch ($method) {
+        case 'GET':
+            $conversationId = $_GET['conversation_id'] ?? null;
+            if ($conversationId) {
+                getConversationDetails($conversationId);
+            } else {
+                getConversationsList();
+            }
+            break;
+        
+        case 'DELETE':
+            deleteConversationAdmin();
+            break;
+        
+        default:
+            jsonResponse(['error' => 'Méthode non autorisée'], 405);
+    }
+} catch (Exception $e) {
+    jsonResponse([
+        'error' => 'Erreur serveur',
+        'details' => $e->getMessage(),
+        'trace' => $e->getTraceAsString()
+    ], 500);
+}
 
 // Gérer les requêtes OPTIONS (preflight)
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {

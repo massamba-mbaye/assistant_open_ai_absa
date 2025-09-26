@@ -243,13 +243,16 @@ $adminName = $_SESSION['admin_name'] ?? $_SESSION['admin_username'];
             content.style.display = 'none';
 
             try {
-                const response = await fetch('<?= API_URL ?>/stats.php');
+                // 🆕 Chemin corrigé
+                const response = await fetch('../api/admin/stats.php');
                 
-                if (response.status === 401) {
-                    window.location.href = 'index.php';
-                    return;
+                // Vérifier le statut avant de parser
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Erreur réponse:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
                 }
-
+                
                 const data = await response.json();
 
                 if (data.success) {
@@ -261,14 +264,16 @@ $adminName = $_SESSION['admin_name'] ?? $_SESSION['admin_username'];
                 }
 
             } catch (error) {
-                console.error('Erreur:', error);
+                console.error('Erreur complète:', error);
                 loading.innerHTML = `
                     <i class="fas fa-exclamation-circle" style="font-size: 48px; color: #dc3545;"></i>
                     <p style="color: #dc3545;">Erreur de chargement des statistiques</p>
+                    <p style="font-size: 14px; color: #666;">${error.message}</p>
                     <button onclick="loadStats()" class="btn-refresh">Réessayer</button>
                 `;
             }
         }
+
 
         /**
          * Affiche les statistiques dans l'interface
