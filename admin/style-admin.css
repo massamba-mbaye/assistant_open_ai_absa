@@ -666,3 +666,17 @@ body {
 .stat-card:nth-child(2) { animation-delay: 0.2s; }
 .stat-card:nth-child(3) { animation-delay: 0.3s; }
 .stat-card:nth-child(4) { animation-delay: 0.4s; }
+
+#conversations-table-container button.btn-action {
+    background-color: transparent !important;
+    border: none;
+}
+
+#conversations-table-container button.btn-action:hover i.fas.fa-eye {
+    color: green;
+}
+
+#conversations-table-container button.btn-action:hover i.fas.fa-trash {
+    color: red;
+}
+
