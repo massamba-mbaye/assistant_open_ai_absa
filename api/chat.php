@@ -2,8 +2,15 @@
 /**
  * API CHAT - Envoi de message et sauvegarde DB
  * POST - Envoyer un message et recevoir la réponse de l'assistant
- * 🆕 AVEC ANALYSE ÉMOTIONNELLE AUTOMATIQUE
  */
+
+// Désactiver l'affichage des erreurs HTML
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
+
+// Log des erreurs dans un fichier
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/../error.log');
 
 // Headers CORS et JSON
 header('Content-Type: application/json; charset=utf-8');
@@ -26,18 +33,30 @@ session_start();
 // ========================================
 // CONFIGURATION
 // ========================================
-$MAX_LENGTH = (int)$_ENV['MAX_MESSAGE_LENGTH'];
-$API_KEY = $_ENV['OPENAI_API_KEY'];
-$ASSISTANT_ID = $_ENV['ASSISTANT_ID'];
+$MAX_LENGTH = isset($_ENV['MAX_MESSAGE_LENGTH']) ? (int)$_ENV['MAX_MESSAGE_LENGTH'] : 2000;
+$API_KEY = $_ENV['OPENAI_API_KEY'] ?? '';
+$ASSISTANT_ID = $_ENV['ASSISTANT_ID'] ?? '';
+
+// Vérifier que les clés API sont définies
+if (empty($API_KEY) || empty($ASSISTANT_ID)) {
+    jsonResponse([
+        'error' => 'Configuration OpenAI manquante',
+        'details' => 'Vérifiez que OPENAI_API_KEY et ASSISTANT_ID sont définis dans .env'
+    ], 500);
+}
 
 // ========================================
 // VALIDATION DE L'INPUT
 // ========================================
 $input = json_decode(file_get_contents('php://input'), true);
 
+if (json_last_error() !== JSON_ERROR_NONE) {
+    jsonResponse(['error' => 'JSON invalide: ' . json_last_error_msg()], 400);
+}
+
 $userId = $input['user_id'] ?? null;
 $conversationId = $input['conversation_id'] ?? null;
-$message = trim($input['message'] ?? '');
+$message = isset($input['message']) ? trim($input['message']) : '';
 
 // Validation user_id
 if (!$userId) {
@@ -126,7 +145,7 @@ try {
     $attempts = 0;
     
     do {
-        usleep(250000);
+        usleep(250000); // 250ms
         $status = openaiRequest('GET', 
             "https://api.openai.com/v1/threads/$threadId/runs/$runId",
             $API_KEY
@@ -176,29 +195,28 @@ try {
             'message_content' => $message
         ]);
         
-        // Déterminer l'URL de base (localhost ou production)
+        // Déterminer l'URL de base
         $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
         $host = $_SERVER['HTTP_HOST'];
-        $baseUrl = "$protocol://$host";
+        $scriptPath = dirname($_SERVER['SCRIPT_NAME']);
+        $baseUrl = "$protocol://$host$scriptPath";
         
         // Appel asynchrone à l'API d'analyse
-        $ch = curl_init("$baseUrl/api/admin/emotions-analysis.php");
+        $ch = curl_init("$baseUrl/admin/emotions-analysis.php");
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => $analysisPayload,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT_MS => 100, // Timeout court pour ne pas bloquer
-            CURLOPT_NOSIGNAL => 1 // Évite les problèmes de timeout
+            CURLOPT_TIMEOUT_MS => 100,
+            CURLOPT_NOSIGNAL => 1
         ]);
         
         curl_exec($ch);
-        
-        // Ne pas vérifier les erreurs pour ne pas bloquer la réponse
         curl_close($ch);
         
     } catch (Exception $e) {
-        // Logger l'erreur mais ne pas bloquer
+        // Logger mais ne pas bloquer
         error_log("Erreur analyse émotions: " . $e->getMessage());
     }
     
@@ -214,6 +232,9 @@ try {
     ]);
     
 } catch (Exception $e) {
+    // Logger l'erreur
+    error_log("Erreur chat.php: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+    
     jsonResponse([
         'error' => 'Erreur interne',
         'details' => $e->getMessage()
@@ -263,8 +284,10 @@ function openaiRequest($method, $url, $apiKey, $data = null) {
     $responseData = json_decode($response, true);
     
     if ($statusCode !== 200) {
-        $errorMsg = $responseData['error']['message'] ?? 'Erreur inconnue';
-        throw new Exception('Erreur OpenAI: ' . $errorMsg);
+        $errorMsg = isset($responseData['error']['message']) 
+            ? $responseData['error']['message'] 
+            : 'Erreur inconnue';
+        throw new Exception('Erreur OpenAI (HTTP ' . $statusCode . '): ' . $errorMsg);
     }
     
     return $responseData;
